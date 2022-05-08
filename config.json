@@ -1,0 +1,19 @@
+{
+    "Discord": {
+        "token": "OTUxMTYwNjA2MzkwNjMyNDg4.YijbWA.KACvuwk_lJlejpdwhM24gYUnGwM",
+        "owner": "516049910622191626",
+        "verbose": true,
+        "DEBUG": "*",
+        "FORCE_COLOR": 1,
+        "DEBUG_COLORS": 1
+    },
+
+    "TSRuntime": {
+        "compilerOptions": {
+            "removeComments": true,
+            "noEmit": true
+        },
+        
+        "emit": false
+    }
+}
