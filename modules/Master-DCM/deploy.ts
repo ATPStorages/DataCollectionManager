@@ -1,10 +1,10 @@
 import { RESTPostAPIApplicationCommandsJSONBody, RESTPostAPIChatInputApplicationCommandsJSONBody } from "discord-api-types/v10";
 import { isMainThread, parentPort, workerData } from 'worker_threads';
 import { SlashCommandBuilder, SlashCommandSubcommandsOnlyBuilder } from "@discordjs/builders";
+import { Client, CommandInteraction } from "discord.js";
 import { Routes } from "discord-api-types/v9";
 import { fileURLToPath } from "node:url";
 import { REST } from "@discordjs/rest";
-import { Client } from "discord.js";
 import fs from "node:fs/promises";
 import chalk from "chalk";
 import debug from "debug";
@@ -12,18 +12,18 @@ import debug from "debug";
 const DepOut = debug((isMainThread ? "Discord" : workerData.debuggerName) + "/Deploy");
 const rest = new REST().setToken(process.env.token!);
 
-type EventExecution = (client: Client, ...otherRequests: any) => any;
-type CommandExecution = (client: Client, ...otherRequests: any) => any;
+type EventExecution = (client: ExtendedClient, ...otherRequests: any) => any;
+type CommandExecution = (client: ExtendedClient, interaction: CommandInteraction, ...otherRequests: any) => any;
 export interface CommandObject { name: string, disabled: boolean, slashCommand: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder, execute: CommandExecution };
 export interface EventObject { name: string, disabled: boolean, initialize: CommandExecution };
 
-export type ExtendedClient = Client & { commands?: Map<String, Command>, events?: Map<String, Event> };
+export type ExtendedClient = Client & { commands?: Map<String, Command>, events?: Map<String, Event>, dataDir?: string };
 
 export class Command { 
     public name: string;
     public disabled: boolean;
     public slashCommand: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder;
-    public execute: CommandExecution;
+    public execute: CommandExecution; 
 
     constructor(name: string, disabled: boolean, slashCommand: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder, execute: CommandExecution) {
         this.name = name;

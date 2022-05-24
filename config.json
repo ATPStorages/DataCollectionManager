@@ -3,7 +3,9 @@
         "token": "OTUxMTYwNjA2MzkwNjMyNDg4.YijbWA.KACvuwk_lJlejpdwhM24gYUnGwM",
         "owner": "516049910622191626",
         "verbose": true,
-        "DEBUG": "*",
+        "dataDirectory": "/miscData",
+
+        "DEBUG": "*,-*Verbose",
         "FORCE_COLOR": 1,
         "DEBUG_COLORS": 1
     },

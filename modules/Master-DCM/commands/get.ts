@@ -162,14 +162,16 @@ const command: CommandObject = {
                 } else interaction.reply({ ephemeral: open, embeds: [ embeds.error("The specified stickers ref. UUID does not exist.") ] });
                 break;
             case "announcement":
-                const mid = interaction.options.getString("id")!.trim(), acnt = data.records.messages.total[mid] || data.records.messages.total[data.records.messages.anmMap[interaction.options.getString("id")!.trim()]];
+                const mid = interaction.options.getString("id")!.trim(), acnt = data.records.messages.total[mid] || data.records.messages.total[data.records.anmMap[interaction.options.getString("id")!.trim()]];
                 if(!!mid && acnt) {
                     const json = interaction.options.getBoolean("json");
+                    const str = acnt.Content !== "" ? acnt.Content : undefined;
+
                     if(json) {
-                        const announcement = new MessagePayload(interaction, { content: acnt.Content, embeds: data.records.embeds.total[acnt["Embeds Reference UUID"]], files: data.records.attachments.total[acnt["Attachments Reference UUID"]], stickers: data.records.stickers.total[acnt["Stickers Reference UUID"]] });
+                        const announcement = new MessagePayload(interaction, { content: str, embeds: data.records.embeds.total[acnt["Embeds Reference UUID"]], files: data.records.attachments.total[acnt["Attachments Reference UUID"]], stickers: data.records.stickers.total[acnt["Stickers Reference UUID"]] });
                         interaction.reply({ content: `ID \`${mid}\` referenced announcement \`${acnt["Message ID"]}\` in **${acnt.Channel}** (**${acnt["Channel ID"]}**), **${acnt.Server}** (**${acnt["Server ID"]}**)`, ephemeral: open, files: [ new MessageAttachment(Buffer.from(JSON.stringify(announcement.options, null, "\t")), `${acnt["Server ID"]}-${acnt["Message ID"]}.json`) ] });
                     } else {
-                        interaction.reply({ content: acnt.Content, embeds: data.records.embeds.total[acnt["Embeds Reference UUID"]], files: data.records.attachments.total[acnt["Attachments Reference UUID"]], ephemeral: open });
+                        interaction.reply({ content: str, embeds: data.records.embeds.total[acnt["Embeds Reference UUID"]], files: data.records.attachments.total[acnt["Attachments Reference UUID"]], ephemeral: open });
                     }
                 } else interaction.reply({ ephemeral: open, embeds: [ embeds.error("The specified announcement ID does not exist.") ] });
                 break;

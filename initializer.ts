@@ -4,10 +4,11 @@ import fs      from "node:fs/promises";
 import { constants, Dirent } from "fs";
 import path    from "node:path/win32";
 import { fileURLToPath } from "url";
+import deepmerge from "deepmerge";
 import typescript from "ts-node";
+import osu from "node-os-utils";
 import chalk   from "chalk";
 import debug   from "debug";
-import os      from "os";
 import "dotenv/config";
 
 type DefObject = {[key: string]: any};
@@ -61,14 +62,7 @@ await fs.readdir(modules, {withFileTypes: true}).then(async modDir => {
     process.exit(1);
 });
 
-DCMOut(chalk.green("All modules loaded -- Switching over to status monitoring"));
-const DCMStat = debug("Manager/Stat");
-
-setInterval(() => {
-    const memProc = process.memoryUsage.rss() / (1024 * 1024), memSys = os.totalmem() / (1024 * 1024), cpuUse = process.cpuUsage();
-    DCMStat(chalk.blueBright`Memory Usage: [ {white ${memProc.toFixed(2)}} / {white ${memSys.toFixed(2)}} MB ({white ${(memProc/memSys).toFixed(2)}%}) ] - CPU Usage [ User: {white ${cpuUse.user}}μs / System: {white ${cpuUse.system}}μs ]`);
-}, 7500);
-
+DCMOut(chalk.green("All modules loaded."));
 function deepSize(object: DefObject, currentSize: number = 0): Promise<number> {
     return new Promise(async(resolve) => {
         for(const [_, value] of Object.entries(object)) {
@@ -96,9 +90,10 @@ function truncate(text: any, length: number) {
 }
 
 const TSCompiler = typescript.create(Config.TSRuntime);
-function createWorker(entry: Dirent, modulePath: string): Promise<{ worker: Worker, debugger: debug.Debugger }> {
+function createWorker(entry: Dirent, modulePath: string): Promise<{ worker: Worker, workerDebugger: debug.Debugger }> {
     return new Promise(async(resolve, reject) => {
         let newWorker: Worker, newDebugger: debug.Debugger;
+        const modifiedConfig = modifyTable(entry.name, Config);
 
         if(entry.isDirectory()) {
             const DDBName = truncate(`Manager/Modules:${entry.name}`, 50);
@@ -106,7 +101,7 @@ function createWorker(entry: Dirent, modulePath: string): Promise<{ worker: Work
                 const importedPackage = JSON.parse(contents.toString()), modfPath = path.join(modulePath, importedPackage.main);
                 if(importedPackage.main) {
                     await fs.access(modfPath, constants.R_OK).then(() => {
-                        newWorker = new Worker(path.join(modulePath, importedPackage.main), { env: Config[entry.name] || {}, workerData: { debuggerName: DDBName } });
+                        newWorker = new Worker(path.join(modulePath, importedPackage.main), { env: modifiedConfig, workerData: { debuggerName: DDBName } });
                     }).catch(err => {
                         reject(chalk.red`Failed to open a worker in {white ${modulePath}}.\n-> ${err.name}: {white ${err.message}}`);
                     });
@@ -117,7 +112,7 @@ function createWorker(entry: Dirent, modulePath: string): Promise<{ worker: Work
                     await fs.readdir(modulePath, {withFileTypes: true}).then(async intModDir => {
                         for(const entry of intModDir) 
                             if(entry.isFile() && entry.name.endsWith(".js") || entry.name.endsWith(".cjs") || entry.name.endsWith(".mjs")) {
-                                newWorker = new Worker(modulePath, { env: Config[entry.name] || {}, workerData: { debuggerName: DDBName } });
+                                newWorker = new Worker(modulePath, { env: modifiedConfig, workerData: { debuggerName: DDBName } });
                                 break;
                             }
                     });
@@ -133,7 +128,7 @@ function createWorker(entry: Dirent, modulePath: string): Promise<{ worker: Work
                     DCMOut(chalk.yellow`Warning: Module {white ${entry.name}} is a TypeScript file. It is recommended to compile it into a JavaScript file before running {white DCM}.`);
                     newWorker = new Worker(
                         TSCompiler.compile((await fs.readFile(modulePath)).toString(), modulePath), 
-                        { eval: true, env: Config[entry.name.substring(0, entry.name.lastIndexOf("."))] || {}, workerData: { debuggerName: FDBName } 
+                        { eval: true, env: modifiedConfig, workerData: { debuggerName: FDBName } 
                     });
                 } catch(error) {
                     if(error instanceof Error) {
@@ -141,7 +136,7 @@ function createWorker(entry: Dirent, modulePath: string): Promise<{ worker: Work
                     }
                 }
             } else if(entry.name.endsWith(".js") || entry.name.endsWith(".cjs") || entry.name.endsWith(".mjs")) {
-                newWorker = new Worker(modulePath, { env: Config[entry.name.substring(0, entry.name.lastIndexOf("."))] || {}, workerData: { debuggerName: FDBName } });
+                newWorker = new Worker(modulePath, { env: modifiedConfig, workerData: { debuggerName: FDBName } });
             } else {
                 reject(chalk.red`Module {white ${entry.name}} is not a valid file module.`);
             }
@@ -149,34 +144,33 @@ function createWorker(entry: Dirent, modulePath: string): Promise<{ worker: Work
             newDebugger = debug(FDBName + "/Host");
         }
 
-        resolve({ worker: newWorker!, debugger: newDebugger });
+        resolve({ worker: newWorker!, workerDebugger: newDebugger });
     });
 }
 
 function assignWorker(entry: Dirent, modulePath: string, restarts: number = 0): void {
     if(restarts !== 5) {
-        createWorker(entry, modulePath).then(obj => {
-            obj.worker.on("online", () => {
-                obj.debugger(chalk.green`+ Worker {white ${entry.name}} is online`);
+        createWorker(entry, modulePath).then(({ worker, workerDebugger }) => {
+            worker.on("online", () => {
+                workerDebugger(chalk.green`+ Worker {white ${entry.name}} is online`);
             }).on("message", async(message: any) => {
                 switch(message) {
                     case "restart":
-                        obj.debugger(chalk.yellow`○ Worker {white ${entry.name}} has requested a restart`);
-                        await obj.worker!.terminate();
+                        workerDebugger(chalk.yellow`○ Worker {white ${entry.name}} has requested a restart`);
+                        await worker!.terminate();
                         assignWorker(entry, modulePath, restarts + 1);
                         break;
                     case "exitAll": 
                         process.abort();
-                        break;
                     default:
-                        obj.debugger(chalk.blueBright`> Worker {white ${entry.name}} sent an unknown command; {reset %o}`, message);
+                        workerDebugger(chalk.blueBright`> Worker {white ${entry.name}} sent an unknown command; {reset %o}`, message);
                 }
             }).on("messageerror", (error: Error) => {
-                obj.debugger(chalk.red`! Failed to deserialize a message from Worker {white ${entry.name}}.\n! ${error.name}: {white ${error.message}}`);
+                workerDebugger(chalk.red`! Failed to deserialize a message from Worker {white ${entry.name}}.\n! ${error.name}: {white ${error.message}}`);
             }).on("error", (error: Error) => {
-                obj.debugger(chalk.red`! Worker {white ${entry.name}} encountered a fatal error.\n! ${error.name}: {white ${error.message}}\n! {white ${error.stack}}`);
+                workerDebugger(chalk.red`! Worker {white ${entry.name}} encountered a fatal error.\n! ${error.name}: {white ${error.message}}\n! {white ${error.stack}}`);
             }).on("exit", async(exitCode: number) => {
-                obj.debugger(chalk.yellow`- Worker {white ${entry.name}} exited with code {white ${exitCode}}`);
+                workerDebugger(chalk.yellow`- Worker {white ${entry.name}} exited with code {white ${exitCode}}`);
             });
         }).catch(err => {
             DCMOut(err);
@@ -184,4 +178,13 @@ function assignWorker(entry: Dirent, modulePath: string, restarts: number = 0): 
     } else {
         DCMOut(chalk.red`Failed to restart Worker {white ${entry.name}} after 5 attempts.`);
     }
+}
+
+function modifyTable(entryName: string, config: DefObject): DefObject {
+    let workerEntry = entryName.substring(0, entryName.lastIndexOf("."));
+    workerEntry = workerEntry === "" ? entryName : workerEntry;
+    let modifiedConfig = structuredClone(config);
+    delete modifiedConfig[workerEntry];
+
+    return deepmerge({ adConfig: JSON.stringify(modifiedConfig) }, config[workerEntry] || {});
 }
